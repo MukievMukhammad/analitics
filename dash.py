@@ -45,22 +45,13 @@ try:
         df_prepared["Число запросов"], period=period, model=model_type
     )
 
-    # Отображение основной информации
-    st.subheader(f"Анализ для: {df_selected['source'].iloc[0]}")
-
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
-        st.metric("Количество наблюдений", len(df_prepared))
+        # Отображение основной информации
+        st.subheader(f"Анализ для: {df_selected['source'].iloc[0]}")
     with col2:
-        st.metric(
-            "Период анализа",
-            f"{df_prepared.index.min().strftime('%b %Y')} - {df_prepared.index.max().strftime('%b %Y')}",
-        )
-    with col3:
-        st.metric("Среднее значение", f"{df_prepared['Число запросов'].mean():.0f}")
-
-    # Переключатель для выбора типа графиков
-    chart_type = st.radio("Тип графиков:", ["Plotly (интерактивные)", "Matplotlib"])
+        # Переключатель для выбора типа графиков
+        chart_type = st.radio("Тип графиков:", ["Plotly (интерактивные)", "Matplotlib"])
 
     if chart_type == "Plotly (интерактивные)":
         # Создаем интерактивные графики
@@ -156,6 +147,17 @@ try:
 
 except Exception as e:
     st.error(f"Ошибка при выполнении анализа: {e}")
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Количество наблюдений", len(df_prepared))
+with col2:
+    st.metric(
+        "Период анализа",
+        f"{df_prepared.index.min().strftime('%b %Y')} - {df_prepared.index.max().strftime('%b %Y')}",
+    )
+with col3:
+    st.metric("Среднее значение", f"{df_prepared['Число запросов'].mean():.0f}")
 
 
 # Статистики по компонентам
