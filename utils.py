@@ -237,7 +237,7 @@ def analyze_all_tables(df_list):
     return results
 
 
-def seasonality_peak_score(seasonal_component, peak_months=[6, 7, 8, 9]):
+def seasonality_peak_score(seasonal_component, peak_months=[8, 9, 10]):
     """Вычисляет оценку активности сезонности в летне-осенний период"""
     if seasonal_component is None or len(seasonal_component) == 0:
         return -1
@@ -303,5 +303,5 @@ def analyze_all_tables_with_dual_sorting(df_list):
             continue
     
     # Двойная сортировка: сначала по схожести с синусоидой, затем по летнему пику
-    results.sort(key=lambda x: (x['similarity'], x['summer_peak']), reverse=True)
+    results.sort(key=lambda x: (x['summer_peak'], x['similarity']), reverse=True)
     return results

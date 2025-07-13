@@ -34,11 +34,35 @@ with tab1:
     # if st.button("Анализировать все таблицы", key="analyze_all"):
     with st.spinner("Анализируем все таблицы..."):
         # Анализируем все таблицы
-        all_results = analyze_all_tables_with_dual_sorting(df_list)
+        all_results_ = analyze_all_tables_with_dual_sorting(df_list)
         
-        if not all_results:
+        if not all_results_:
             st.error("Не удалось проанализировать ни одну таблицу")
             st.stop()
+
+        # Добавьте в интерфейс Streamlit:
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            show_top_n = st.slider("Показать топ N таблиц", 1, min(20, len(all_results_)), 10)
+
+        with col2:
+            season_filter = st.selectbox("Фильтр по сезонности", 
+                                        ["Летне-осенний пик", "Летне-осенний спад", "Нейтральная", "Все"])
+
+        with col3:
+            min_similarity = st.slider("Минимальная схожесть с синусоидой", 0.0, 1.0, 0.0, 0.1)
+
+        # Применяем фильтры
+        all_results = all_results_
+        if season_filter != "Все":
+            all_results = [r for r in all_results 
+                            if (season_filter == "Летне-осенний пик" and r['summer_peak'] > 0) or
+                                (season_filter == "Летне-осенний спад" and r['summer_peak'] < -0.1) or
+                                (season_filter == "Нейтральная" and -0.1 <= r['summer_peak'] <= 0)]
+
+        all_results = [r for r in all_results if r['similarity'] >= min_similarity]
+
         
         # Отображаем сводную таблицу
         # В коде Streamlit замените создание сводной таблицы:
@@ -132,6 +156,25 @@ with tab1:
                     y=result['result'].observed.values,
                     line=dict(color='blue'), name='Observed'
                 ), row=1, col=1)
+
+                if hasattr(result['result'].observed.index, 'month'):
+                    summer_mask = result['result'].observed.index.month.isin([8, 9, 10])
+                    summer_data = result['result'].observed[summer_mask]
+                    
+                    if len(summer_data) > 0:
+                        fig_plotly.add_trace(go.Scatter(
+                            x=summer_data.index,
+                            y=summer_data.values,
+                            mode='markers',
+                            marker=dict(
+                                color='red',
+                                size=10,
+                                symbol='circle',
+                                line=dict(width=2, color='darkred')
+                            ),
+                            name='Авг-Окт',
+                            showlegend=False
+                        ), row=1, col=1)
                 
                 # Тренд
                 fig_plotly.add_trace(go.Scatter(
@@ -161,6 +204,25 @@ with tab1:
                     name='Эталонная синусоида'
                 ), row=3, col=1)
                 
+                if hasattr(seasonal_clean.index, 'month'):
+                    summer_mask = seasonal_clean.index.month.isin([8, 9, 10])
+                    summer_data = seasonal_clean[summer_mask]
+                    
+                    if len(summer_data) > 0:
+                        fig_plotly.add_trace(go.Scatter(
+                            x=summer_data.index,
+                            y=summer_data.values,
+                            mode='markers',
+                            marker=dict(
+                                color='red',
+                                size=10,
+                                symbol='circle',
+                                line=dict(width=2, color='darkred')
+                            ),
+                            name='Авг-Окт',
+                            showlegend=False
+                        ), row=3, col=1)
+
                 # Форматирование осей
                 for i in range(1, 4):
                     fig_plotly.update_xaxes(tickformat="%b %Y", tickangle=45, row=i, col=1)
