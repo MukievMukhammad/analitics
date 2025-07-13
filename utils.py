@@ -143,47 +143,51 @@ def similarity_to_sine(seasonal_component):
     """Вычисляет коэффициент корреляции Пирсона между сезонностью и синусоидой"""
     if seasonal_component is None or len(seasonal_component) == 0:
         return -1
-    
+
     # Удаляем NaN значения
     seasonal_clean = seasonal_component.dropna()
     if len(seasonal_clean) < 3:  # Минимум точек для корреляции
         return -1
-    
+
     n = len(seasonal_clean)
     # Создаем синусоиду с тем же количеством точек
     x = np.arange(n)
     sine_wave = sine(x)  # 12-месячный период
-    
+
     try:
         # Вычисляем корреляцию Пирсона
         corr, _ = pearsonr(seasonal_clean.values, sine_wave)
-        return abs(corr)  # Берем абсолютное значение (инвертированная синусоида тоже похожа)
+        return abs(
+            corr
+        )  # Берем абсолютное значение (инвертированная синусоида тоже похожа)
     except:
         return -1
 
+
 import numpy as np
 from scipy.stats import pearsonr
+
 
 def find_best_shift_and_correlation(seasonal_component, compression_factor=1.0):
     """Находит оптимальный сдвиг синусоиды для максимального наложения"""
     if seasonal_component is None or len(seasonal_component) == 0:
         return 0, -1
-    
+
     seasonal_clean = seasonal_component.dropna()
     if len(seasonal_clean) < 3:
         return 0, -1
-    
+
     n = len(seasonal_clean)
     x = np.arange(n)
-    
+
     best_corr = -1
     best_shift = 0
-    
+
     # Тестируем сдвиги от 0 до 12 месяцев
     for shift in np.arange(0, 12, 0.5):  # Шаг 0.5 для более точного поиска
         # Создаем сдвинутую синусоиду
         sine_wave = sine(x, shift)
-        
+
         try:
             corr, _ = pearsonr(seasonal_clean.values, sine_wave)
             if abs(corr) > best_corr:
@@ -191,14 +195,14 @@ def find_best_shift_and_correlation(seasonal_component, compression_factor=1.0):
                 best_shift = shift
         except:
             continue
-    
+
     return best_shift, best_corr
 
 
 def analyze_all_tables(df_list):
     """Анализирует все таблицы и возвращает результаты с сортировкой по схожести"""
     results = []
-    
+
     for i, df in enumerate(df_list):
         try:
             # Подготавливаем данные
@@ -206,60 +210,120 @@ def analyze_all_tables(df_list):
             if len(df_prepared) < 8:
                 print("df_prepared < 8")
                 continue
-                
+
             # Выполняем декомпозицию
             period = min(11, len(df_prepared) // 2)
-            result = seasonal_decompose(df_prepared['Число запросов'], 
-                                      period=period, 
-                                      model='additive')
-            
+            result = seasonal_decompose(
+                df_prepared["Число запросов"], period=period, model="additive"
+            )
+
             # Вычисляем схожесть с синусоидой
             best_shift = 0
             # best_shift, sine_similarity = find_best_shift_and_correlation(result.seasonal)
             sine_similarity = similarity_to_sine(result.seasonal)
-            
-            results.append({
-                'index': i,
-                'source': df['source'].iloc[0] if 'source' in df.columns else f"Таблица {i}",
-                'similarity': sine_similarity,
-                'result': result,
-                'best_shift': best_shift,
-                'data': df_prepared,
-                'observations': len(df_prepared)
-            })
-            
+
+            results.append(
+                {
+                    "index": i,
+                    "source": (
+                        df["source"].iloc[0]
+                        if "source" in df.columns
+                        else f"Таблица {i}"
+                    ),
+                    "similarity": sine_similarity,
+                    "result": result,
+                    "best_shift": best_shift,
+                    "data": df_prepared,
+                    "observations": len(df_prepared),
+                }
+            )
+
         except Exception as e:
             print(e)
             continue
-    
+
     # Сортируем по схожести (от большей к меньшей)
-    results.sort(key=lambda x: x['similarity'], reverse=True)
+    results.sort(key=lambda x: x["similarity"], reverse=True)
     return results
+
+
+def get_max_value_score(data_series):
+    """Получает максимальное значение из временного ряда"""
+    if data_series is None or len(data_series) == 0:
+        return -1
+
+    try:
+        # Очищаем данные от NaN
+        clean_data = data_series.dropna()
+        if len(clean_data) == 0:
+            return -1
+
+        max_value = clean_data.max()
+        return max_value
+    except:
+        return -1
+
+
+def seasonality_peak_score_advanced(seasonal_component, peak_months=[7, 8, 9]):
+    """Улучшенный алгоритм определения пика с учетом отклонений"""
+    if seasonal_component is None or len(seasonal_component) == 0:
+        return -1
+
+    seasonal_clean = seasonal_component.dropna()
+    if len(seasonal_clean) == 0:
+        return -1
+
+    # Получаем месяцы
+    if hasattr(seasonal_clean.index, "month"):
+        months = seasonal_clean.index.month
+    else:
+        months = (np.arange(len(seasonal_clean)) % 12) + 1
+
+    # Значения в целевые месяцы
+    peak_mask = np.isin(months, peak_months)
+    peak_values = seasonal_clean[peak_mask]
+
+    if len(peak_values) == 0:
+        return -1
+
+    # Общая статистика по всему ряду
+    overall_mean = seasonal_clean.mean()
+    overall_std = seasonal_clean.std()
+
+    # Оценка пика: насколько летне-осенние значения превышают общий уровень
+    if overall_std > 0:
+        # Z-score для летне-осенних месяцев
+        z_scores = (peak_values - overall_mean) / overall_std
+        score = z_scores.mean()
+    else:
+        score = 0
+
+    return score
 
 
 def seasonality_peak_score(seasonal_component, peak_months=[8, 9, 10]):
     """Вычисляет оценку активности сезонности в летне-осенний период"""
     if seasonal_component is None or len(seasonal_component) == 0:
         return -1
-    
+
     seasonal_clean = seasonal_component.dropna()
     if len(seasonal_clean) == 0:
         return -1
-    
+
     # Получаем месяцы из индекса
-    if hasattr(seasonal_clean.index, 'month'):
+    if hasattr(seasonal_clean.index, "month"):
         months = seasonal_clean.index.month
     else:
         # Если индекс не даты, создаем циклические месяцы
         months = (np.arange(len(seasonal_clean)) % 12) + 1
-    
+
     # Выбираем значения сезонности для июня-сентября
     peak_mask = np.isin(months, peak_months)
     peak_values = seasonal_clean[peak_mask]
-    
+
     if len(peak_values) == 0:
         return -1
-    
+
     # Оценка - среднее значение сезонности в эти месяцы
     # Положительные значения означают пик, отрицательные - спад
     score = peak_values.mean()
@@ -269,39 +333,106 @@ def seasonality_peak_score(seasonal_component, peak_months=[8, 9, 10]):
 def analyze_all_tables_with_dual_sorting(df_list):
     """Анализирует все таблицы с двумя параметрами сортировки"""
     results = []
-    
+
     for i, df in enumerate(df_list):
         try:
             df_prepared = prepare_data(df)
             if len(df_prepared) < 8:
                 continue
-                
+
             period = min(11, len(df_prepared) // 2)
-            result = seasonal_decompose(df_prepared['Число запросов'], 
-                                      period=period, 
-                                      model='additive')
-            
+            result = seasonal_decompose(
+                df_prepared["Число запросов"], period=period, model="additive"
+            )
+
             # Первый параметр - схожесть с синусоидой
-            best_shift, sine_similarity = find_best_shift_and_correlation(result.seasonal, 1.1)
-            
+            best_shift, sine_similarity = find_best_shift_and_correlation(
+                result.seasonal, 1.1
+            )
+
             # Второй параметр - активность в июне-сентябре
-            summer_peak_score = seasonality_peak_score(result.seasonal)
-            
-            results.append({
-                'index': i,
-                'source': df['source'].iloc[0] if 'source' in df.columns else f"Таблица {i}",
-                'similarity': sine_similarity,
-                'summer_peak': summer_peak_score,
-                'best_shift': best_shift,
-                'result': result,
-                'data': df_prepared,
-                'observations': len(df_prepared)
-            })
-            
+            summer_peak_score = seasonality_peak_score_advanced(result.seasonal)
+
+            results.append(
+                {
+                    "index": i,
+                    "source": (
+                        df["source"].iloc[0]
+                        if "source" in df.columns
+                        else f"Таблица {i}"
+                    ),
+                    "similarity": sine_similarity,
+                    "summer_peak": summer_peak_score,
+                    "best_shift": best_shift,
+                    "result": result,
+                    "data": df_prepared,
+                    "observations": len(df_prepared),
+                }
+            )
+
         except Exception as e:
             # st.error(e)
             continue
-    
+
     # Двойная сортировка: сначала по схожести с синусоидой, затем по летнему пику
-    results.sort(key=lambda x: (x['summer_peak'], x['similarity']), reverse=True)
+    results.sort(key=lambda x: (x["summer_peak"], x["similarity"]), reverse=True)
+    return results
+
+
+def prepare_data_safe(df):
+    return prepare_data(df)
+
+
+def analyze_all_tables_with_triple_sorting(df_list):
+    """Анализирует все таблицы с тремя параметрами сортировки"""
+    results = []
+
+    for i, df in enumerate(df_list):
+        try:
+            df_prepared = prepare_data(df)
+            if len(df_prepared) < 8:
+                continue
+
+            period = min(11, len(df_prepared) // 2)
+            result = seasonal_decompose(
+                df_prepared["Число запросов"], period=period, model="additive"
+            )
+
+            # Первый параметр - схожесть с синусоидой
+            best_shift, sine_similarity = find_best_shift_and_correlation(
+                result.seasonal, 1.2
+            )
+
+            # Второй параметр - активность в июне-сентябре
+            summer_peak_score = seasonality_peak_score_advanced(result.seasonal)
+
+            # Третий параметр - максимальное значение в таблице
+            max_value_score = get_max_value_score(df_prepared["Число запросов"])
+
+            results.append(
+                {
+                    "index": i,
+                    "source": (
+                        df["source"].iloc[0]
+                        if "source" in df.columns
+                        else f"Таблица {i}"
+                    ),
+                    "similarity": sine_similarity,
+                    "summer_peak": summer_peak_score,
+                    "max_value": max_value_score,
+                    "best_shift": best_shift,
+                    "result": result,
+                    "data": df_prepared,
+                    "observations": len(df_prepared),
+                }
+            )
+
+        except Exception as e:
+            st.error(e)
+            continue
+
+    # Тройная сортировка: схожесть с синусоидой, летний пик, максимальное значение
+    results.sort(
+        key=lambda x: (x["summer_peak"], x["max_value"], x["similarity"]), reverse=True
+    )
     return results
