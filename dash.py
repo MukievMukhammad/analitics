@@ -1,4 +1,12 @@
 import streamlit as st
+import matplotlib.pyplot as plt
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+from single_table import render_detail_page
+
+from utils import analyze_all_tables, load_data, sine, analyze_all_tables_with_dual_sorting
+
+import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,231 +15,157 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from statsmodels.tsa.seasonal import seasonal_decompose
 
-from data import load_data, prepare_data
+from utils import load_data, prepare_data
 
 
-# Настройка страницы
-st.set_page_config(page_title="Анализ временных рядов", layout="wide")
-st.title("Анализ тренда и сезонности по запросам из Яндекса")
+# Основная структура приложения с вкладками
+tab1, tab2 = st.tabs(["Все таблицы по схожести", "Индивидуальный анализ"])
 
-df_list = load_data()
+with tab2:
+    # Ваш существующий код для индивидуального анализа
+    render_detail_page()
 
-# Создаем список источников для выбора
-sources = []
-for i, df in enumerate(df_list):
-    if "source" in df.columns and not df["source"].empty:
-        source_name = df["source"].iloc[0]
-        sources.append(f"{i}: {source_name}")
+with tab1:
+    st.header("Все таблицы, отсортированные по схожести с синусоидой")
+    
+    df_list = load_data()
 
-# Выбор таблицы
-selected_option = st.selectbox("Выберите таблицу для анализа:", sources)
+    # Кнопка для запуска анализа
+    # if st.button("Анализировать все таблицы", key="analyze_all"):
+    with st.spinner("Анализируем все таблицы..."):
+        # Анализируем все таблицы
+        all_results = analyze_all_tables_with_dual_sorting(df_list)
+        
+        if not all_results:
+            st.error("Не удалось проанализировать ни одну таблицу")
+            st.stop()
+        
+        # Отображаем сводную таблицу
+        # В коде Streamlit замените создание сводной таблицы:
+        st.subheader("Рейтинг таблиц по двум параметрам")
 
-# Извлекаем индекс выбранной таблицы
-selected_index = int(selected_option.split(":")[0])
-df_selected = df_list[selected_index]
+        summary_data = []
+        for result in all_results:
+            # Определяем тип сезонности
+            if result['summer_peak'] > 0:
+                season_type = "Летне-осенний пик"
+            elif result['summer_peak'] < -0.1:
+                season_type = "Летне-осенний спад"
+            else:
+                season_type = "Нейтральная"
+            
+            summary_data.append({
+                'Ранг': len(summary_data) + 1,
+                'Источник': result['source'],
+                'Схожесть с синусоидой': f"{result['similarity']:.3f}",
+                'Летне-осенняя активность': f"{result['summer_peak']:.3f}",
+                'Тип сезонности': season_type,
+                'Оптимальный сдвиг (мес.)': f"{result['best_shift']:.1f}",
+                'Наблюдений': result['observations']
+            })
 
-df_prepared = prepare_data(df_selected)
+        summary_df = pd.DataFrame(summary_data)
+        st.dataframe(summary_df, use_container_width=True)
 
-# Параметры анализа
-col1, col2 = st.columns(2)
-with col1:
-    period = st.slider("Период сезонности", min_value=4, max_value=12, value=12)
-with col2:
-    model_type = st.selectbox("Тип модели", ["additive", "multiplicative"])
-
-# Выполнение декомпозиции
-try:
-    result = seasonal_decompose(
-        df_prepared["Число запросов"], period=period, model=model_type
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
-        # Отображение основной информации
-        st.subheader(f"Анализ для: {df_selected['source'].iloc[0]}")
-    with col2:
-        # Переключатель для выбора типа графиков
-        chart_type = st.radio("Тип графиков:", ["Plotly (интерактивные)", "Matplotlib"])
-
-    if chart_type == "Plotly (интерактивные)":
-        # Создаем интерактивные графики
-        fig_plotly = make_subplots(
-            rows=3,
-            cols=1,
-            subplot_titles=("Исходные данные", "Тренд", "Сезонность", "Остатки"),
-            shared_xaxes=True,
-            vertical_spacing=0.1,
-        )
-
-        fig_plotly.add_trace(
-            go.Scatter(
-                x=result.observed.index,
-                y=result.observed.values,
-                name="Observed",
-                line=dict(color="blue"),
-            ),
-            row=1,
-            col=1,
-        )
-
-        fig_plotly.add_trace(
-            go.Scatter(
-                x=result.trend.index,
-                y=result.trend.values,
-                name="Trend",
-                line=dict(color="red"),
-            ),
-            row=2,
-            col=1,
-        )
-
-        fig_plotly.add_trace(
-            go.Scatter(
-                x=result.seasonal.index,
-                y=result.seasonal.values,
-                name="Seasonal",
-                line=dict(color="green"),
-            ),
-            row=3,
-            col=1,
-        )
-
-        # fig_plotly.add_trace(go.Scatter(
-        #     x=result.resid.index,
-        #     y=result.resid.values,
-        #     name='Residual',
-        #     line=dict(color='orange')
-        # ), row=4, col=1)
-
-        # Форматирование оси X для всех подграфиков
-        for i in range(1, 4):  # Для всех 3 подграфиков
-            fig_plotly.update_xaxes(
-                tickformat="%b %Y",  # Формат: Янв 2023
-                showticklabels=True,
-                row=i, col=1
-            )
-
-        fig_plotly.update_layout(height=800, showlegend=False)
-        st.plotly_chart(fig_plotly, use_container_width=True)
-
-    if chart_type == "Matplotlib":
-        # Создание графиков
-        fig, axes = plt.subplots(4, 1, figsize=(12, 10), sharex=True)
-
-        # Исходные данные
-        axes[0].plot(result.observed, color="blue", linewidth=2)
-        axes[0].set_title("Исходные данные", fontsize=12, fontweight="bold")
-        axes[0].grid(True, alpha=0.3)
-
-        # Тренд
-        axes[1].plot(result.trend, color="red", linewidth=2)
-        axes[1].set_title("Тренд", fontsize=12, fontweight="bold")
-        axes[1].grid(True, alpha=0.3)
-
-        # Сезонность
-        axes[2].plot(result.seasonal, color="green", linewidth=2)
-        axes[2].set_title("Сезонность", fontsize=12, fontweight="bold")
-        axes[2].grid(True, alpha=0.3)
-
-        # Остатки
-        axes[3].plot(result.resid, color="orange", linewidth=2)
-        axes[3].set_title("Остатки", fontsize=12, fontweight="bold")
-        axes[3].grid(True, alpha=0.3)
-
-        plt.xticks(rotation=45)
-        plt.xlabel("Период")
-        plt.tight_layout()
-
-        # Отображение графика в Streamlit
-        st.pyplot(fig)
-
-except Exception as e:
-    st.error(f"Ошибка при выполнении анализа: {e}")
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Количество наблюдений", len(df_prepared))
-with col2:
-    st.metric(
-        "Период анализа",
-        f"{df_prepared.index.min().strftime('%b %Y')} - {df_prepared.index.max().strftime('%b %Y')}",
-    )
-with col3:
-    st.metric("Среднее значение", f"{df_prepared['Число запросов'].mean():.0f}")
-
-
-# Статистики по компонентам
-st.subheader("Статистический анализ")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.write("**Тренд**")
-    trend_stats = {
-        "Среднее": result.trend.mean(),
-        "Мин": result.trend.min(),
-        "Макс": result.trend.max(),
-        "Стд. отклонение": result.trend.std(),
-    }
-    st.json(trend_stats)
-
-with col2:
-    st.write("**Сезонность**")
-    seasonal_stats = {
-        "Среднее": result.seasonal.mean(),
-        "Мин": result.seasonal.min(),
-        "Макс": result.seasonal.max(),
-        "Амплитуда": result.seasonal.max() - result.seasonal.min(),
-    }
-    st.json(seasonal_stats)
-
-# Таблица с данными
-if st.checkbox("Показать исходные данные"):
-    st.subheader("Исходные данные")
-    st.dataframe(df_prepared)
-
-
-# Кнопка для анализа всех таблиц
-if st.button("Анализировать все таблицы"):
-    progress_bar = st.progress(0)
-    results_summary = []
-
-    for i, df in enumerate(df_list):
-        try:
-            df_prep = prepare_data(df)
-            if len(df_prep) >= 22:  # Минимум для анализа
-                result = seasonal_decompose(
-                    df_prep["Число запросов"],
-                    period=min(11, len(df_prep) // 2),
-                    model="additive",
+        
+        # Настройки отображения
+        col1, col2 = st.columns(2)
+        with col1:
+            show_top_n = st.slider("Показать топ N таблиц", 1, len(all_results), 10)
+        with col2:
+            chart_type = st.selectbox("Тип графиков", ["Plotly", "Matplotlib"])
+        
+        # Отображаем графики для топ-N таблиц
+        st.subheader(f"Топ-{show_top_n} таблиц с наибольшей схожестью")
+        
+        for idx, result in enumerate(all_results[:show_top_n]):
+            st.markdown(f"### {idx + 1}. {result['source']}")
+            st.markdown(f"**Схожесть с синусоидой:** {result['similarity']:.3f}")
+            
+            if chart_type == "Matplotlib":
+                # Matplotlib графики
+                fig, axes = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+                
+                # Исходные данные
+                axes[0].plot(result['result'].observed, color='blue', linewidth=2)
+                axes[0].set_title('Исходные данные')
+                axes[0].grid(True, alpha=0.3)
+                
+                # Тренд
+                axes[1].plot(result['result'].trend, color='red', linewidth=2)
+                axes[1].set_title('Тренд')
+                axes[1].grid(True, alpha=0.3)
+                
+                # Сезонность
+                axes[2].plot(result['result'].seasonal, color='green', linewidth=2, label='Сезонность')
+                
+                # Добавляем эталонную синусоиду для сравнения
+                n = len(result['result'].seasonal.dropna())
+                x = np.arange(n)
+                sine_reference = sine(x, result['best_shift'])
+                # Масштабируем синусоиду под амплитуду сезонности
+                seasonal_clean = result['result'].seasonal.dropna()
+                sine_scaled = sine_reference * (seasonal_clean.std() / np.std(sine_reference))
+                
+                axes[2].plot(seasonal_clean.index[:len(sine_scaled)], sine_scaled, 
+                            color='orange', linestyle='--', alpha=0.7, label='Эталонная синусоида')
+                axes[2].set_title(f'Сезонность (схожесть: {result["similarity"]:.3f})')
+                axes[2].legend()
+                axes[2].grid(True, alpha=0.3)
+                
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+            else:
+                # Plotly графики
+                fig_plotly = make_subplots(
+                    rows=3, cols=1,
+                    subplot_titles=("Исходные данные", "Тренд", "Сезонность"),
+                    shared_xaxes=True,
+                    vertical_spacing=0.1
                 )
-
-                results_summary.append(
-                    {
-                        "Источник": df["source"].iloc[0],
-                        "Наблюдений": len(df_prep),
-                        "Средний тренд": result.trend.mean(),
-                        "Амплитуда сезонности": result.seasonal.max()
-                        - result.seasonal.min(),
-                        "Среднее значение": df_prep["Число запросов"].mean(),
-                    }
-                )
-        except:
-            pass
-
-        progress_bar.progress((i + 1) / len(df_list))
-
-    # Отображение сводной таблицы
-    if results_summary:
-        summary_df = pd.DataFrame(results_summary)
-        st.subheader("Сводные результаты анализа")
-        st.dataframe(summary_df)
-
-        # Возможность скачать результаты
-        csv = summary_df.to_csv(index=False)
-        st.download_button(
-            label="Скачать результаты CSV",
-            data=csv,
-            file_name="analysis_results.csv",
-            mime="text/csv",
-        )
+                
+                # Исходные данные
+                fig_plotly.add_trace(go.Scatter(
+                    x=result['result'].observed.index, 
+                    y=result['result'].observed.values,
+                    line=dict(color='blue'), name='Observed'
+                ), row=1, col=1)
+                
+                # Тренд
+                fig_plotly.add_trace(go.Scatter(
+                    x=result['result'].trend.index, 
+                    y=result['result'].trend.values,
+                    line=dict(color='red'), name='Trend'
+                ), row=2, col=1)
+                
+                # Сезонность
+                seasonal_clean = result['result'].seasonal.dropna()
+                fig_plotly.add_trace(go.Scatter(
+                    x=seasonal_clean.index, 
+                    y=seasonal_clean.values,
+                    line=dict(color='green'), name='Seasonal'
+                ), row=3, col=1)
+                
+                # Эталонная синусоида
+                n = len(seasonal_clean)
+                x = np.arange(n)
+                sine_reference = np.sin(2 * np.pi * x / 12)
+                sine_scaled = sine_reference * (seasonal_clean.std() / np.std(sine_reference))
+                
+                fig_plotly.add_trace(go.Scatter(
+                    x=seasonal_clean.index[:len(sine_scaled)], 
+                    y=sine_scaled,
+                    line=dict(color='orange', dash='dash'), 
+                    name='Эталонная синусоида'
+                ), row=3, col=1)
+                
+                # Форматирование осей
+                for i in range(1, 4):
+                    fig_plotly.update_xaxes(tickformat="%b %Y", tickangle=45, row=i, col=1)
+                
+                fig_plotly.update_layout(height=600, showlegend=False)
+                st.plotly_chart(fig_plotly, use_container_width=True, key=f"chart_{idx}")
+            
+            st.markdown("---")  # Разделитель между таблицами
