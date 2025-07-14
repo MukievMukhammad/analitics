@@ -47,12 +47,7 @@ with tab1:
             st.stop()
 
         # Добавьте в интерфейс Streamlit:
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            show_top_n = st.slider(
-                "Показать топ N таблиц", 1, min(20, len(all_results_)), 10
-            )
+        col2, col3 = st.columns(2)
 
         with col2:
             season_filter = st.selectbox(
@@ -117,7 +112,7 @@ with tab1:
         # Настройки отображения
         col1, col2 = st.columns(2)
         with col1:
-            show_top_n = st.slider("Показать топ N таблиц", 1, len(all_results), 10)
+            show_top_n = st.slider("Показать топ N таблиц", 1, len(all_results), 100)
         with col2:
             chart_type = st.selectbox("Тип графиков", ["Plotly", "Matplotlib"])
 
