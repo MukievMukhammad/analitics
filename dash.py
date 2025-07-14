@@ -32,7 +32,7 @@ with tab2:
     render_detail_page()
 
 with tab1:
-    st.header("Все таблицы, отсортированные по схожести с синусоидой")
+    st.header("Аналитика по запросам в Яндекс")
 
     df_list = load_data()
 
