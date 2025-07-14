@@ -168,6 +168,7 @@ import numpy as np
 from scipy.stats import pearsonr
 
 
+@st.cache_data
 def find_best_shift_and_correlation(seasonal_component, compression_factor=1.0):
     """Находит оптимальный сдвиг синусоиды для максимального наложения"""
     if seasonal_component is None or len(seasonal_component) == 0:
@@ -329,7 +330,7 @@ def seasonality_peak_score(seasonal_component, peak_months=[8, 9, 10]):
     score = peak_values.mean()
     return score
 
-
+@st.cache_data
 def analyze_all_tables_with_dual_sorting(df_list):
     """Анализирует все таблицы с двумя параметрами сортировки"""
     results = []
@@ -383,6 +384,7 @@ def prepare_data_safe(df):
     return prepare_data(df)
 
 
+@st.cache_data
 def analyze_all_tables_with_triple_sorting(df_list):
     """Анализирует все таблицы с тремя параметрами сортировки"""
     results = []
